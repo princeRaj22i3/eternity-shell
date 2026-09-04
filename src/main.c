@@ -46,6 +46,19 @@ int main(){
         }
         args[i] = NULL;
 
+        if(strcmp(args[0],"exit") == 0){
+            free(buffer);
+            exit(EXIT_SUCCESS);
+        }
+
+        if(strcmp(args[0],"cd") == 0){
+            if(chdir(args[1]) != 0){
+                perror("eternity-shell: cd");
+            }
+            free(buffer);
+            continue;
+        }
+
         pid_t id = fork();
         if(id < 0){
             perror("Fork failed");
@@ -59,13 +72,6 @@ int main(){
         else{
             int status;
             waitpid(id, &status, 0);
-
-            if(WIFEXITED(status)){
-                printf("Child exited cleanly with status: %d\n", WEXITSTATUS(status));
-            }
-            else if(WIFSIGNALED(status)){
-                printf("Child killed violently by a signal\n");
-            }
         }
 
         free(buffer);
