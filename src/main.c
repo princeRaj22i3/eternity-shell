@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <fcntl.h> 
 
 
 int main(){
@@ -14,6 +15,8 @@ int main(){
         char *buffer = NULL;
         size_t buff_size = 0;
         ssize_t text;
+        char* operation = NULL;
+        char* file = NULL;
 
         text = getline(&buffer, &buff_size, stdin);
 
@@ -41,6 +44,11 @@ int main(){
 
         char *token = strtok(buffer, " ");
         while(token != NULL && i<text){
+            if(strcmp(token,">")==0 || strcmp(token,">>")==0 || strcmp(token,"<")==0){
+                operation = token;
+                file = strtok(NULL, " ");
+                break;
+            }
             args[i++] = token;
             token = strtok(NULL, " ");
         }
@@ -65,6 +73,27 @@ int main(){
             exit(EXIT_FAILURE);
         }
         else if(id == 0){
+            if(operation && file){
+                if(strcmp(operation,">")==0){
+                    int file_fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                    dup2(file_fd, 1);
+                    close(file_fd);
+                }
+                else if(strcmp(operation,">>")==0){
+                    int file_fd = open(file, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                    dup2(file_fd, 1);
+                    close(file_fd);
+                }
+                else{
+                    int file_fd = open(file, O_RDONLY, 0644);
+                    if(file_fd == -1){
+                        perror("File does not exist");
+                        exit(EXIT_FAILURE);
+                    }
+                    dup2(file_fd, 0);
+                    close(file_fd);
+                }
+            }
             execvp(args[0], args);
             perror("Exec failed");
             exit(EXIT_FAILURE);
