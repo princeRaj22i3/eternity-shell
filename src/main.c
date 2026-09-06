@@ -12,9 +12,11 @@ int main(){
     while(1){
         printf("eternity-shell $ ");
 
+        // getline variables
         char *buffer = NULL;
         size_t buff_size = 0;
         ssize_t text;
+        // I/O Redirection variables
         char* operation = NULL;
         char* file = NULL;
 
@@ -42,6 +44,7 @@ int main(){
         char *args[text+1];
         int i = 0;
 
+        //Tokenisation
         char *token = strtok(buffer, " ");
         while(token != NULL && i<text){
             if(strcmp(token,">")==0 || strcmp(token,">>")==0 || strcmp(token,"<")==0){
@@ -54,11 +57,13 @@ int main(){
         }
         args[i] = NULL;
 
+        //Exit
         if(strcmp(args[0],"exit") == 0){
             free(buffer);
             exit(EXIT_SUCCESS);
         }
 
+        // Change Directory 
         if(strcmp(args[0],"cd") == 0){
             if(chdir(args[1]) != 0){
                 perror("eternity-shell: cd");
@@ -67,37 +72,70 @@ int main(){
             continue;
         }
 
+        // fork syetem call
         pid_t id = fork();
+
         if(id < 0){
             perror("Fork failed");
             exit(EXIT_FAILURE);
         }
+        // Child Process
         else if(id == 0){
-            if(operation && file){
+            if(operation){
+                if(!file){
+                    fprintf(stderr, "eternity-shell: Unexpected syntax error. File name not given.\n");
+                    _exit(EXIT_FAILURE);
+                }
+                // I/O Redirection
                 if(strcmp(operation,">")==0){
                     int file_fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                    dup2(file_fd, 1);
+                    if(file_fd == -1){
+                        fprintf(stderr, "eternity-shell: %s ", file);
+                        perror("");
+                        _exit(EXIT_FAILURE);
+                    }
+                    if(dup2(file_fd, 1) < 0){
+                        perror("eternity-shell: redirection failed");
+                        close(file_fd);
+                        _exit(EXIT_FAILURE);
+                    }
                     close(file_fd);
                 }
                 else if(strcmp(operation,">>")==0){
                     int file_fd = open(file, O_WRONLY | O_CREAT | O_APPEND, 0644);
-                    dup2(file_fd, 1);
+                    if(file_fd == -1){
+                        fprintf(stderr, "eternity-shell: %s ", file);
+                        perror("");
+                        _exit(EXIT_FAILURE);
+                    }
+                    if(dup2(file_fd, 1) < 0){
+                        perror("eternity-shell: redirection failed");
+                        close(file_fd);
+                        _exit(EXIT_FAILURE);
+                    }
                     close(file_fd);
                 }
                 else{
                     int file_fd = open(file, O_RDONLY, 0644);
                     if(file_fd == -1){
                         perror("File does not exist");
-                        exit(EXIT_FAILURE);
+                        _exit(EXIT_FAILURE);
                     }
-                    dup2(file_fd, 0);
+                    if(dup2(file_fd, 0) < 0){
+                        perror("eternity-shell: redirection failed");
+                        close(file_fd);
+                        _exit(EXIT_FAILURE);
+                    }
                     close(file_fd);
                 }
             }
+
+            // exec system call
             execvp(args[0], args);
             perror("Exec failed");
-            exit(EXIT_FAILURE);
+            _exit(EXIT_FAILURE);
         }
+        //Parent Process
         else{
             int status;
             waitpid(id, &status, 0);
