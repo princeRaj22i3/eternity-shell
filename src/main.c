@@ -41,7 +41,10 @@ int main(){
             continue;
         }
     
+        //exec argument vector
         char *args[text+1];
+        char *sargs[text+1];
+        int noArgs = 0;
         int i = 0;
 
         //Tokenisation
@@ -52,10 +55,17 @@ int main(){
                 file = strtok(NULL, " ");
                 break;
             }
-            args[i++] = token;
+            if(strcmp(token,"|")==0){
+                noArgs = 1;
+                args[i] = NULL;
+                i = 0;
+                token = strtok(NULL, " ");
+            }
+            if(!noArgs) args[i++] = token;
+            else sargs[i++] = token;
             token = strtok(NULL, " ");
         }
-        args[i] = NULL;
+        (noArgs) ? (sargs[i] = NULL) : (args[i] = NULL);
 
         //Exit
         if(strcmp(args[0],"exit") == 0){
@@ -71,6 +81,9 @@ int main(){
             free(buffer);
             continue;
         }
+
+        int fd[2];
+        pipe(fd);
 
         // fork syetem call
         pid_t id = fork();
@@ -130,6 +143,11 @@ int main(){
                 }
             }
 
+            if(noArgs){
+                close(fd[0]);
+                dup2(fd[1],1);
+                close(fd[1]);
+            }
             // exec system call
             execvp(args[0], args);
             perror("Exec failed");
@@ -137,6 +155,27 @@ int main(){
         }
         //Parent Process
         else{
+            if(noArgs){
+                int id2 = fork();
+                if(id2 < 0){
+                    perror("Fork failed");
+                    exit(EXIT_FAILURE);
+                }
+                else if(id2 == 0){
+                    close(fd[1]);
+                    dup2(fd[0],0);
+                    close(fd[0]);
+                    execvp(sargs[0], sargs);
+                    perror("Exec failed");
+                    _exit(EXIT_FAILURE);
+                }
+                else{
+                    close(fd[0]);
+                    close(fd[1]);
+                    int status2;
+                    waitpid(id2, &status2, 0);
+                }
+            }
             int status;
             waitpid(id, &status, 0);
         }
