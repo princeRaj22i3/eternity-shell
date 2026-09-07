@@ -43,8 +43,7 @@ int main(){
     
         //exec argument vector
         char *args[text+1];
-        char *sargs[text+1];
-        int noArgs = 0;
+        int pipeFound = 0;
         int i = 0;
 
         //Tokenisation
@@ -56,16 +55,33 @@ int main(){
                 break;
             }
             if(strcmp(token,"|")==0){
-                noArgs = 1;
-                args[i] = NULL;
-                i = 0;
-                token = strtok(NULL, " ");
+                pipeFound = 1;
             }
-            if(!noArgs) args[i++] = token;
-            else sargs[i++] = token;
+            args[i++] = token;
             token = strtok(NULL, " ");
         }
-        (noArgs) ? (sargs[i] = NULL) : (args[i] = NULL);
+        args[i] = NULL;
+
+        //pipes
+        int r = 0;
+        char *commands[10][10];
+        if(pipeFound){
+            int c = 0;
+            int j = 0;
+
+            while(args[j] != NULL){
+                if(strcmp(args[j],"|") == 0){
+                    commands[r][c] = NULL;
+                    r++;
+                    c=0;
+                    j++;
+                    continue;
+                }
+                commands[r][c++] = args[j];
+                j++;
+            }
+            commands[r][c] = NULL;
+        }
 
         //Exit
         if(strcmp(args[0],"exit") == 0){
@@ -82,104 +98,113 @@ int main(){
             continue;
         }
 
-        int fd[2];
-        pipe(fd);
+        int cnt = 0;
+        int prev_pipe = -1;
 
-        // fork syetem call
-        pid_t id = fork();
+        for(cnt = 0; cnt<=r; cnt++){
+            
+            int fd[2];
+            if(cnt<r) {
+                pipe(fd);
+            }
 
-        if(id < 0){
-            perror("Fork failed");
-            exit(EXIT_FAILURE);
-        }
-        // Child Process
-        else if(id == 0){
-            if(operation){
-                if(!file){
-                    fprintf(stderr, "eternity-shell: Unexpected syntax error. File name not given.\n");
-                    _exit(EXIT_FAILURE);
-                }
-                // I/O Redirection
-                if(strcmp(operation,">")==0){
-                    int file_fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                    if(file_fd == -1){
-                        fprintf(stderr, "eternity-shell: %s ", file);
-                        perror("");
+            // fork syetem call
+            pid_t id = fork();
+
+            if(id < 0){
+                perror("Fork failed");
+                exit(EXIT_FAILURE);
+            }
+            // Child Process
+            else if(id == 0){
+                if(operation){
+                    if(!file){
+                        fprintf(stderr, "eternity-shell: Unexpected syntax error. File name not given.\n");
                         _exit(EXIT_FAILURE);
                     }
-                    if(dup2(file_fd, 1) < 0){
-                        perror("eternity-shell: redirection failed");
+                    // I/O Redirection
+                    if(strcmp(operation,">")==0){
+                        int file_fd = open(file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                        if(file_fd == -1){
+                            fprintf(stderr, "eternity-shell: %s ", file);
+                            perror("");
+                            _exit(EXIT_FAILURE);
+                        }
+                        if(dup2(file_fd, 1) < 0){
+                            perror("eternity-shell: redirection failed");
+                            close(file_fd);
+                            _exit(EXIT_FAILURE);
+                        }
                         close(file_fd);
-                        _exit(EXIT_FAILURE);
                     }
-                    close(file_fd);
-                }
-                else if(strcmp(operation,">>")==0){
-                    int file_fd = open(file, O_WRONLY | O_CREAT | O_APPEND, 0644);
-                    if(file_fd == -1){
-                        fprintf(stderr, "eternity-shell: %s ", file);
-                        perror("");
-                        _exit(EXIT_FAILURE);
-                    }
-                    if(dup2(file_fd, 1) < 0){
-                        perror("eternity-shell: redirection failed");
+                    else if(strcmp(operation,">>")==0){
+                        int file_fd = open(file, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                        if(file_fd == -1){
+                            fprintf(stderr, "eternity-shell: %s ", file);
+                            perror("");
+                            _exit(EXIT_FAILURE);
+                        }
+                        if(dup2(file_fd, 1) < 0){
+                            perror("eternity-shell: redirection failed");
+                            close(file_fd);
+                            _exit(EXIT_FAILURE);
+                        }
                         close(file_fd);
-                        _exit(EXIT_FAILURE);
                     }
-                    close(file_fd);
+                    else{
+                        int file_fd = open(file, O_RDONLY, 0644);
+                        if(file_fd == -1){
+                            perror("File does not exist");
+                            _exit(EXIT_FAILURE);
+                        }
+                        if(dup2(file_fd, 0) < 0){
+                            perror("eternity-shell: redirection failed");
+                            close(file_fd);
+                            _exit(EXIT_FAILURE);
+                        }
+                        close(file_fd);
+                    }
+                }
+
+                if(pipeFound){
+                    if(prev_pipe != -1){
+                        dup2(prev_pipe,0);
+                        close(prev_pipe);
+                    }
+                    if(cnt<r){
+                        close(fd[0]);
+                        dup2(fd[1],1);
+                        close(fd[1]);
+                    }
+                    execvp(commands[cnt][0], commands[cnt]);
+                }
+                // exec system call
+                execvp(args[0], args);
+                perror("Exec failed");
+                _exit(EXIT_FAILURE);
+            }
+
+            //Parent Process
+            else{
+                if(pipeFound){
+                    if(prev_pipe != -1){
+                        close(prev_pipe);
+                    }
+                    if(cnt<r){
+                        close(fd[1]);
+                        prev_pipe = fd[0];
+                    }
                 }
                 else{
-                    int file_fd = open(file, O_RDONLY, 0644);
-                    if(file_fd == -1){
-                        perror("File does not exist");
-                        _exit(EXIT_FAILURE);
-                    }
-                    if(dup2(file_fd, 0) < 0){
-                        perror("eternity-shell: redirection failed");
-                        close(file_fd);
-                        _exit(EXIT_FAILURE);
-                    }
-                    close(file_fd);
+                    int status;
+                    waitpid(id, &status, 0);
                 }
             }
-
-            if(noArgs){
-                close(fd[0]);
-                dup2(fd[1],1);
-                close(fd[1]);
-            }
-            // exec system call
-            execvp(args[0], args);
-            perror("Exec failed");
-            _exit(EXIT_FAILURE);
-        }
-        //Parent Process
-        else{
-            if(noArgs){
-                int id2 = fork();
-                if(id2 < 0){
-                    perror("Fork failed");
-                    exit(EXIT_FAILURE);
-                }
-                else if(id2 == 0){
-                    close(fd[1]);
-                    dup2(fd[0],0);
-                    close(fd[0]);
-                    execvp(sargs[0], sargs);
-                    perror("Exec failed");
-                    _exit(EXIT_FAILURE);
-                }
-                else{
-                    close(fd[0]);
-                    close(fd[1]);
-                    int status2;
-                    waitpid(id2, &status2, 0);
-                }
-            }
-            int status;
-            waitpid(id, &status, 0);
         }
 
+        for(cnt = 0; cnt<=r; cnt++){
+            wait(NULL);
+        }
         free(buffer);
     }
 
