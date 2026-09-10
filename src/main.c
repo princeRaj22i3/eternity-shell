@@ -40,68 +40,51 @@ int main(){
     
         //exec argument vector
         char *args[text+1];
-        int pipeFound = 0;
-        int redirectFound = 0;
         int i = 0;
 
         //Tokenisation
         char *token = strtok(buffer, " ");
         while(token != NULL && i<text){
-            if(strcmp(token,">")==0 || strcmp(token,">>")==0 || strcmp(token,"<")==0){
-                redirectFound = 1;
-            }
-            if(strcmp(token,"|")==0){
-                pipeFound = 1;
-            }
             args[i++] = token;
             token = strtok(NULL, " ");
         }
         args[i] = NULL;
 
         //pipes
-        int r = 0;
         char *commands[10][10];
-        if(pipeFound){
-            int c = 0;
-            int j = 0;
-
-            while(args[j] != NULL){
-                if(strcmp(args[j],"|") == 0){
-                    commands[r][c] = NULL;
-                    r++;
-                    c=0;
-                    j++;
-                    continue;
-                }
-                commands[r][c++] = args[j];
-                j++;
-            }
-            commands[r][c] = NULL;
-        }
+        int r = 0;
+        int c = 0;
 
         // I/O redirection
         char* operation[10];
         char* file[10];
-        char *redirect_command[10];
+        int redirect_command_index[10];
         int o = 0;
 
-        if(redirectFound){
-            int j = 0;
-            int c = 0;
+        int j = 0;
+        int current_command = 0;
 
-            while(args[j] != NULL){
-                if(strcmp(args[j],">")==0 || strcmp(args[j],">>")==0 || strcmp(args[j],"<")==0){
-                    operation[o] = args[j];
-                    file[o] = args[j+1];
-                    o++;
-                    j += 2;
-                    continue;
-                }
-                redirect_command[c++] = args[j];
+        while(args[j] != NULL){
+            if(strcmp(args[j],"|") == 0){
+                commands[r][c] = NULL;
+                r++;
+                c=0;
                 j++;
+                current_command++;
+                continue;
             }
-            redirect_command[c] = NULL;
-        } 
+            if(strcmp(args[j],">")==0 || strcmp(args[j],">>")==0 || strcmp(args[j],"<")==0){
+                operation[o] = args[j];
+                file[o] = args[j+1];
+                redirect_command_index[o] = current_command;
+                o++;
+                j += 2;
+                continue;
+            }
+            commands[r][c++] = args[j];
+            j++;
+        }
+        commands[r][c] = NULL;
 
 
         //Exit
@@ -138,67 +121,66 @@ int main(){
             }
             // Child Process
             else if(id == 0){
-                if(redirectFound){
-                    // I/O Redirection
-                    for(int x=0; x<o; x++){
-                        if(strcmp(operation[x],">")==0){
-                            int file_fd = open(file[x], O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                            if(file_fd == -1){
-                                fprintf(stderr, "eternity-shell: %s ", file[x]);
-                                perror("");
-                                _exit(EXIT_FAILURE);
-                            }
-                            if(dup2(file_fd, 1) < 0){
-                                perror("eternity-shell: redirection failed");
-                                close(file_fd);
-                                _exit(EXIT_FAILURE);
-                            }
-                            close(file_fd);
-                        }
-                        else if(strcmp(operation[x],">>")==0){
-                            int file_fd = open(file[x], O_WRONLY | O_CREAT | O_APPEND, 0644);
-                            if(file_fd == -1){
-                                fprintf(stderr, "eternity-shell: %s ", file[x]);
-                                perror("");
-                                _exit(EXIT_FAILURE);
-                            }
-                            if(dup2(file_fd, 1) < 0){
-                                perror("eternity-shell: redirection failed");
-                                close(file_fd);
-                                _exit(EXIT_FAILURE);
-                            }
-                            close(file_fd);
-                        }
-                        else{
-                            int file_fd = open(file[x], O_RDONLY, 0644);
-                            if(file_fd == -1){
-                                perror("File does not exist");
-                                _exit(EXIT_FAILURE);
-                            }
-                            if(dup2(file_fd, 0) < 0){
-                                perror("eternity-shell: redirection failed");
-                                close(file_fd);
-                                _exit(EXIT_FAILURE);
-                            }
-                            close(file_fd);
-                        }
-                    }
 
-                    execvp(redirect_command[0], redirect_command);
+                if(prev_pipe != -1){
+                    dup2(prev_pipe,0);
+                    close(prev_pipe);
+                }
+                if(cnt<r){
+                    close(fd[0]);
+                    dup2(fd[1],1);
+                    close(fd[1]);
+                }
+    
+
+                // I/O Redirection
+                for(int x=0; x<o; x++){
+                    if(redirect_command_index[x]!=cnt) continue;
+
+                    if(strcmp(operation[x],">")==0){
+                        int file_fd = open(file[x], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                        if(file_fd == -1){
+                            fprintf(stderr, "eternity-shell: %s ", file[x]);
+                            perror("");
+                            _exit(EXIT_FAILURE);
+                        }
+                        if(dup2(file_fd, 1) < 0){
+                            perror("eternity-shell: redirection failed");
+                            close(file_fd);
+                            _exit(EXIT_FAILURE);
+                        }
+                        close(file_fd);
+                    }
+                    else if(strcmp(operation[x],">>")==0){
+                        int file_fd = open(file[x], O_WRONLY | O_CREAT | O_APPEND, 0644);
+                        if(file_fd == -1){
+                            fprintf(stderr, "eternity-shell: %s ", file[x]);
+                            perror("");
+                            _exit(EXIT_FAILURE);
+                        }
+                        if(dup2(file_fd, 1) < 0){
+                            perror("eternity-shell: redirection failed");
+                            close(file_fd);
+                            _exit(EXIT_FAILURE);
+                        }
+                        close(file_fd);
+                    }
+                    else{
+                        int file_fd = open(file[x], O_RDONLY, 0644);
+                        if(file_fd == -1){
+                            perror("File does not exist");
+                            _exit(EXIT_FAILURE);
+                        }
+                        if(dup2(file_fd, 0) < 0){
+                            perror("eternity-shell: redirection failed");
+                            close(file_fd);
+                            _exit(EXIT_FAILURE);
+                        }
+                        close(file_fd);
+                    }
                 }
 
-                if(pipeFound){
-                    if(prev_pipe != -1){
-                        dup2(prev_pipe,0);
-                        close(prev_pipe);
-                    }
-                    if(cnt<r){
-                        close(fd[0]);
-                        dup2(fd[1],1);
-                        close(fd[1]);
-                    }
-                    execvp(commands[cnt][0], commands[cnt]);
-                }
+                execvp(commands[cnt][0], commands[cnt]);
                 // exec system call
                 execvp(args[0], args);
                 perror("Exec failed");
@@ -207,14 +189,12 @@ int main(){
 
             //Parent Process
             else{
-                if(pipeFound){
-                    if(prev_pipe != -1){
-                        close(prev_pipe);
-                    }
-                    if(cnt<r){
-                        close(fd[1]);
-                        prev_pipe = fd[0];
-                    }
+                if(prev_pipe != -1){
+                    close(prev_pipe);
+                }
+                if(cnt<r){
+                    close(fd[1]);
+                    prev_pipe = fd[0];
                 }
                 else{
                     int status;
