@@ -43,11 +43,44 @@ int main(){
         int i = 0;
 
         //Tokenisation
-        char *token = strtok(buffer, " ");
-        while(token != NULL && i<text){
-            args[i++] = token;
-            token = strtok(NULL, " ");
+        char *src = buffer;
+        char *dest = buffer;
+        
+        while(*src != '\0'){
+            
+            while(*src == ' '){
+                src++;
+            }
+            if(*src == '\0') break;
+            dest = src;
+            
+            if(*dest == '"' && *(dest+1) == '"'){
+                dest++;
+                src++;
+            }
+            args[i++] = dest;
+            
+            int in_quotes = 0;
+            
+            while(*src != '\0'){
+                
+                if(*src == '"'){
+                    in_quotes = !in_quotes;
+                    src++;
+                }
+                if(!in_quotes && *src == ' '){
+                    break;
+                }
+                
+                if(*src != '"') *dest = *src;
+                dest++;
+                src++;
+            }
+            
+            *dest = '\0';
+            src++;
         }
+        
         args[i] = NULL;
 
         //pipes
