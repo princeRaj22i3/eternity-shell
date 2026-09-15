@@ -4,10 +4,34 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <fcntl.h> 
+#include <signal.h>
 
+pid_t background_pids[100];
+int bid = 0;
+void shift_back(int *id){
+    int i = 0;
+    while(i < bid-1){
+        *id = *(id+1);
+        id++;
+        i++;
+    }
+}
+void handle_sigchld(int sig){
+    for(int i=0; i<bid; i++){
+        int status;
+        int res = waitpid(background_pids[i], &status, WNOHANG);
+        if(res > 0){   
+            printf("\nThe child process with pid, [%d], has finished executing\n", background_pids[i]);
+            shift_back(&background_pids[i]);
+            bid--;
+            i--;
+        }
+    }
+}
 
 int main(){
     system("clear");
+    signal(SIGCHLD, handle_sigchld);
 
     while(1){
         printf("eternity-shell $ ");
@@ -43,6 +67,14 @@ int main(){
         int i = 0;
 
         //Tokenisation
+        char truncate[2] = ">";
+        char input[2] = "<";
+        char append[3] = ">>";
+        char pipe_ch[2] = "|";
+        char ampersand[2] = "&";
+        
+        char *sp_ch_ptr = NULL;
+
         char *src = buffer;
         char *dest = buffer;
         
@@ -58,7 +90,7 @@ int main(){
                 dest++;
                 src++;
             }
-            args[i++] = dest;
+            if(*dest != '&') args[i++] = dest;
             
             int in_quotes = 0;
             
@@ -69,6 +101,26 @@ int main(){
                     src++;
                 }
                 if(!in_quotes && *src == ' '){
+                    break;
+                }
+                if(!in_quotes && (*src == '<' || *src == '>' || *src == '|' || *src == '&')){
+                    if(*src == '>' && *(src+1)=='>'){
+                        sp_ch_ptr = append;
+                        *(src+1) = ' ';
+                    }
+                    else if(*src == '>'){
+                        sp_ch_ptr = truncate;
+                    }
+                    else if(*src == '<'){
+                        sp_ch_ptr = input;
+                    }
+                    else if(*src == '|'){
+                        sp_ch_ptr = pipe_ch;
+                    }
+                    else if(*src == '&'){
+                        sp_ch_ptr = ampersand;
+                    }
+                    args[i++] = sp_ch_ptr;
                     break;
                 }
                 
@@ -82,6 +134,9 @@ int main(){
         }
         
         args[i] = NULL;
+
+        //background processes
+        int background_process = 0;
 
         //pipes
         char *commands[10][10];
@@ -98,6 +153,11 @@ int main(){
         int current_command = 0;
 
         while(args[j] != NULL){
+            if(strcmp(args[j],"&") == 0){
+                background_process = 1;
+                args[j] = NULL;
+                break;
+            }
             if(strcmp(args[j],"|") == 0){
                 commands[r][c] = NULL;
                 r++;
@@ -135,8 +195,13 @@ int main(){
             continue;
         }
 
+        //Pipe variables
         int cnt = 0;
         int prev_pipe = -1;
+
+        //foreground pids
+        int foreground_pids[10];
+        int fid = 0;
 
         for(cnt = 0; cnt<=r; cnt++){
             
@@ -221,7 +286,12 @@ int main(){
             }
 
             //Parent Process
-            else{
+            else{                
+                if(background_process) 
+                    background_pids[bid++] = id;
+                else 
+                    foreground_pids[fid++] = id;
+
                 if(prev_pipe != -1){
                     close(prev_pipe);
                 }
@@ -229,16 +299,14 @@ int main(){
                     close(fd[1]);
                     prev_pipe = fd[0];
                 }
-                else{
-                    int status;
-                    waitpid(id, &status, 0);
-                }
             }
         }
 
-        for(cnt = 0; cnt<=r; cnt++){
-            wait(NULL);
+        while(fid>0){
+            int status;
+            waitpid(foreground_pids[--fid], &status, 0);
         }
+
         free(buffer);
     }
 
